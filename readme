@@ -1,131 +1,102 @@
+***
+
+```markdown
 # Notification Microservice
 
-This repository contains the source code for a robust, scalable notification microservice. It is designed to handle various notification channels (Push, SMS, Email) asynchronously, ensuring high availability and decoupling the notification logic from main application flows.
+A highly scalable, asynchronous notification microservice designed to handle multi-channel communications. Built with **Node.js** and **Apache Kafka**, this service acts as a centralized communication hub, decoupling notification logic from main application flows (such as the core alumni application). 
 
-## Overview
-
-This microservice provides an internal API endpoint that other services within the ecosystem can call to trigger user notifications. The core philosophy is **asynchronicity**. The service acknowledges requests immediately and processes the actual delivery via a message queue (Kafka), isolating the main application from potential external API latency or failures.
+By publishing events to Kafka, the system ensures zero-blocking on the main APIs and provides reliable "fan-out" delivery to Email, Slack, and Incident Management (PagerDuty) channels via dedicated background workers.
 
 ---
 
 ## System Architecture
 
-The following diagram illustrates the component interaction and message flow of the notification system.
-
-### Diagram: Sequence and Data Flow
-
 ![System Architecture Diagram](Architecture.png)
 
-### Architectural Flow Description
-
-1.  **Request Initiation:** A client application (Mobile/Web) makes an HTTP `POST /v1/notify` request to the Notification Microservice. This request contains the user identifier, notification type (e.g., "PUSH"), and payload data.
-2.  **Immediate Acknowledgment:** The API layer of the microservice validates the request, generates a unique transaction ID, and **immediately publishes** a message containing the notification details to a specific Kafka topic (e.g., `notification.incoming`). It then returns a `202 Accepted` response to the client. The client doesn't wait for the notification to be sent.
-3.  **Asynchronous Processing:** A background consumer process (worker) listens to the Kafka topic.
-4.  **Channel Dispatch:** When the consumer receives the message, it determines the required channel (e.g., PUSH).
-5.  **External API Call:** The microservice makes an asynchronous API call to the corresponding external provider:
-    * **Firebase Cloud Messaging (FCM)** for Mobile Push Notifications.
-    * **Twilio** for SMS Notifications (future expansion for Email, etc.).
-6.  **Callback/Log (Optional):** The external APIs provide responses regarding delivery status, which are logged for tracking.
-
-This setup ensures that a slow response from FCM or Twilio does not degrade the performance of the main application.
-
----
-
-## Key Features
-
-* **Asynchronous Processing:** Decouples notification delivery using Apache Kafka.
-* **Multi-Channel Support:** Built-in integration for Mobile Push (FCM) and SMS (Twilio).
-* **High Scalability:** Both the API and consumer layers can be scaled horizontally.
-* **Error Handling and Retries (Future):** Planned implementation of Dead Letter Queues (DLQ) for failed notification attempts.
-* **Templating Support (Future):** Support for dynamic, localized notification templates.
+### How it Works:
+1. **Producer (API):** Client applications send a unified JSON payload to the `/notify` API endpoint. The API immediately acknowledges the request and pushes a message to a Kafka topic.
+2. **Message Broker (Kafka):** Acts as the highly-available middleman, queuing the notification events.
+3. **Consumers (Workers):** Independent Node.js worker processes (`emailWorker.js`, `slackWorker.js`, `incidentWorker.js`) listen to specific Kafka topics. When an event matches their designated channel, they process and dispatch the alert to the respective external provider.
 
 ---
 
 ## Technology Stack
 
-* **Language:** Python / Node.js (Adjust based on your codebase)
-* **Framework:** FastAPI (Python) / Express (Node.js)
+* **Backend:** Node.js, Express.js
 * **Message Broker:** Apache Kafka
-* **External Providers:** Firebase Cloud Messaging (FCM), Twilio (SMS)
-* **Database (Optional for logging):** PostgreSQL / MongoDB
+* **Containerization:** Docker, Docker Compose
+* **Workers:** Dedicated scripts for Email (SMTP), Slack (Webhooks/API), and Incidents (PagerDuty).
 
 ---
 
-## API Documentation (Internal)
+## Use Cases & Payload Examples
 
-### `POST /v1/notify`
+The service routes messages dynamically based on the `channels` array provided in the request payload. Here are three common scenarios for the alumni ecosystem:
 
-Trigger a notification.
-
-#### Request Headers
-
-| Header | Value | Description |
-| :--- | :--- | :--- |
-| `Content-Type` | `application/json` | Required |
-| `Authorization` | `Bearer <token>` | Internal service authentication |
-
-#### Request Body
+### Use Case 1: The "Marketing / Event Announcement"
+**Scenario:** You want to let alumni know about an upcoming hackathon or meetup. You want to drop an email to them and post it in the community Slack channel. You *do not* want to trigger an incident alert.
 
 ```json
 {
-  "userId": "usr_123456",
-  "channel": "PUSH",  // Options: PUSH, SMS
+  "message_type": "announcement",
+  "priority": "low",
+  "channels": ["email", "slack"],
+  "recipients": ["alumni.test@example.com"], 
   "payload": {
-    "title": "New Order!",
-    "body": "Your order #987 has been confirmed.",
-    "deepLink": "myapp://orders/987"
+    "title": "🎉 JECRC Alumni Hackathon 2026",
+    "body": "Join us on campus next month for a 24-hour hackathon! Food and energy drinks provided."
   }
 }
 ```
 
-#### Response (Success)
-
-`202 Accepted`
+### Use Case 2: The "Internal System Warning"
+**Scenario:** A background job in the alumni app is running slowly. It's not an emergency, but the dev team should look at it. You just want a quiet Slack message without spamming inboxes.
 
 ```json
 {
-  "status": "accepted",
-  "transactionId": "txn_abc1234567890",
-  "message": "Notification request queued successfully."
+  "message_type": "system_warning",
+  "priority": "medium",
+  "channels": ["slack"],
+  "recipients": [],
+  "payload": {
+    "title": "Background Job Latency",
+    "body": "The image upload processing queue is currently taking > 5 seconds per image."
+  }
+}
+```
+
+### Use Case 3: The "Critical Outage" (The 3-Channel Fan-out)
+**Scenario:** The app's main database goes offline. You need to alert the on-call engineer immediately via PagerDuty (Incident), drop an alert in the Dev Slack channel, and email the engineering lead so they have a paper trail.
+
+```json
+{
+  "message_type": "emergency",
+  "priority": "critical",
+  "channels": ["email", "slack", "incident"],
+  "recipients": ["engineering.lead@example.com"],
+  "payload": {
+    "title": "DATABASE CONNECTION FAILED",
+    "body": "The main MongoDB cluster is unreachable. User logins and data retrieval are currently failing. Immediate action required."
+  }
 }
 ```
 
 ---
 
-## Setup and Installation
+## Local Setup & Execution
 
 ### Prerequisites
+* Docker & Docker Compose
+* Node.js (v18+)
 
-* Docker and Docker Compose (recommended)
-* Access to an Apache Kafka cluster (or use the provided `docker-compose` for local dev)
-* Firebase Admin SDK Service Account JSON
-* Twilio Account SID, Auth Token, and Sender Number
+### Running the Infrastructure
+Start the entire stack (Zookeeper, Kafka, API server, and Workers) using Docker Compose:
 
-### Local Environment Setup
+```bash
+docker-compose up -d --build
+```
 
-1.  **Clone the repository:**
-    ```bash
-    git clone https://github.com/your-org/notification_microservice.git
-    cd notification_microservice
-    ```
+### Testing the API
+Once the containers are running, you can hit the API at `http://localhost:<PORT>/notify` (check your `api/index.js` for the exact port) using Postman or cURL, passing in one of the JSON payloads above.
 
-2.  **Configuration (`.env` file):**
-    Create a `.env` file in the root directory and populate it with your credentials (see `.env.example`).
-
-    ```env
-    KAFKA_BOOTSTRAP_SERVERS=localhost:9092
-    KAFKA_TOPIC=notification.incoming
-    FIREBASE_SERVICE_ACCOUNT_JSON=./path/to/serviceAccountKey.json
-    TWILIO_ACCOUNT_SID=your_sid
-    TWILIO_AUTH_TOKEN=your_token
-    TWILIO_SENDER_NUMBER=+1234567890
-    ```
-
-3.  **Run with Docker Compose:**
-    This command spins up the required Kafka infrastructure alongside the microservice (API and Consumer).
-    ```bash
-    docker-compose up -d --build
-    ```
-
-4.  **Verification:**
-    Access the API documentation (if enabled) at `http://localhost:8000/docs` (if Python/FastAPI).
+---
