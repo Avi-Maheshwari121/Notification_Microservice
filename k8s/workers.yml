@@ -15,8 +15,8 @@ spec:
     spec:
       containers:
       - name: email-worker
-        image: notification-service-img
-        imagePullPolicy: Never
+        image: avitheg/notification-service-img:v1
+        imagePullPolicy: Always
         command: ["node", "workers/emailWorker.js"]
         envFrom:
         - secretRef:
@@ -41,8 +41,8 @@ spec:
     spec:
       containers:
       - name: slack-worker
-        image: notification-service-img
-        imagePullPolicy: Never
+        image: avitheg/notification-service-img:v1
+        imagePullPolicy: Always
         command: ["node", "workers/slackWorker.js"]
         envFrom:
         - secretRef:
@@ -67,8 +67,8 @@ spec:
     spec:
       containers:
       - name: incident-worker
-        image: notification-service-img
-        imagePullPolicy: Never
+        image: avitheg/notification-service-img:v1
+        imagePullPolicy: Always
         command: ["node", "workers/incidentWorker.js"]
         envFrom:
         - secretRef:

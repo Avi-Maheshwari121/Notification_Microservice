@@ -29,8 +29,8 @@ spec:
     spec:
       containers:
       - name: api
-        image: notification-service-img
-        imagePullPolicy: Never 
+        image: avitheg/notification-service-img:v1
+        imagePullPolicy: Always 
         command: ["node", "api/index.js"]
         ports:
         - containerPort: 3000
