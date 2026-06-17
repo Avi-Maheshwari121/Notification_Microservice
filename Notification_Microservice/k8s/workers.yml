@@ -1,0 +1,79 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: email-worker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: email-worker
+  template:
+    metadata:
+      labels:
+        app: email-worker
+    spec:
+      containers:
+      - name: email-worker
+        image: avitheg/notification-service-img:v1
+        imagePullPolicy: Always
+        command: ["node", "workers/emailWorker.js"]
+        envFrom:
+        - secretRef:
+            name: notification-secrets
+        env:
+        - name: KAFKA_BROKER
+          value: "kafka:9092"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: slack-worker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: slack-worker
+  template:
+    metadata:
+      labels:
+        app: slack-worker
+    spec:
+      containers:
+      - name: slack-worker
+        image: avitheg/notification-service-img:v1
+        imagePullPolicy: Always
+        command: ["node", "workers/slackWorker.js"]
+        envFrom:
+        - secretRef:
+            name: notification-secrets
+        env:
+        - name: KAFKA_BROKER
+          value: "kafka:9092"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: incident-worker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: incident-worker
+  template:
+    metadata:
+      labels:
+        app: incident-worker
+    spec:
+      containers:
+      - name: incident-worker
+        image: avitheg/notification-service-img:v1
+        imagePullPolicy: Always
+        command: ["node", "workers/incidentWorker.js"]
+        envFrom:
+        - secretRef:
+            name: notification-secrets
+        env:
+        - name: KAFKA_BROKER
+          value: "kafka:9092"
+
