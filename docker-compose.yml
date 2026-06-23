@@ -2,6 +2,7 @@ services:
   # 1. The Message Broker
   kafka:
     image: apache/kafka:latest
+    container_name: alumni-kafka
     ports:
       - "9092:9092"
     environment:
@@ -15,44 +16,67 @@ services:
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+    networks:
+      - alumni-network
 
-  # 2. The API (SHIM Layer)
+ # 2. The API (SHIM Layer)
   api:
     build: .
+    container_name: notification-api
     command: node api/index.js
+    restart: on-failure           # <-- Add this line
     ports:  
       - "3000:3000"
     environment:
       - KAFKA_BROKER=kafka:9092
     depends_on:
       - kafka
+    networks:
+      - alumni-network
 
   # 3. The Email Worker
   email-worker:
     build: .
+    container_name: notification-email-worker
     command: node workers/emailWorker.js
+    restart: on-failure           # <-- Add this line
     env_file: .env
     environment:
       - KAFKA_BROKER=kafka:9092
     depends_on:
       - kafka
+    networks:
+      - alumni-network
 
   # 4. The Slack Worker
   slack-worker:
     build: .
+    container_name: notification-slack-worker
     command: node workers/slackWorker.js
+    restart: on-failure           # <-- Add this line
     env_file: .env
     environment:
       - KAFKA_BROKER=kafka:9092
     depends_on:
       - kafka
+    networks:
+      - alumni-network
 
   # 5. The Incident Worker
   incident-worker:
     build: .
+    container_name: notification-incident-worker
     command: node workers/incidentWorker.js
+    restart: on-failure           # <-- Add this line
     env_file: .env
     environment:
       - KAFKA_BROKER=kafka:9092
     depends_on:
       - kafka
+    networks:
+      - alumni-network
+
+# Connect to the external network created in Phase 1
+networks:
+  alumni-network:
+    external: true
