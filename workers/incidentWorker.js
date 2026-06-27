@@ -1,4 +1,3 @@
-// workers/incidentWorker.js
 require('dotenv').config({ path: require('path').resolve(__dirname, '../.env') });
 const kafka = require('../config/kafka');
 
@@ -6,7 +5,7 @@ const consumer = kafka.consumer({ groupId: 'incident-consumers' });
 
 async function startIncidentWorker() {
   await consumer.connect();
-  console.log(' Incident Worker connected to Kafka');
+  console.log('Incident Worker connected to Kafka');
   await consumer.subscribe({ topic: 'notifications', fromBeginning: true });
 
   await consumer.run({
@@ -17,25 +16,28 @@ async function startIncidentWorker() {
         // Only trigger for the 'incident' channel and high/critical priorities
         if (!data.channels || !data.channels.includes('incident')) return;
         if (data.priority !== 'critical' && data.priority !== 'high') {
-            console.log(' Incident skipped: Priority not high enough.');
+            console.log('Incident skipped: Priority not high enough.');
             return;
         }
 
-        console.log('\n Triggering PagerDuty v1 Incident...');
+        console.log('\n Triggering PagerDuty Events API v2 Incident...');
 
-        // Standard PagerDuty Events API v1 Payload
+        // Updated PagerDuty Events API v2 Payload
         const incidentPayload = {
-          "service_key": process.env.INCIDENT_ROUTING_KEY, // Your v1 Integration Key
-          "event_type": "trigger",
-          "description": `[${data.priority.toUpperCase()}] ${data.payload.title}`,
-          "details": {
-            "body": data.payload.body,
+          "routing_key": process.env.PAGERDUTY_ROUTING_KEY, // Note: Now uses routing_key
+          "event_action": "trigger",                       // Mandatory for V2
+          "payload": {
+            "summary": `[${data.priority.toUpperCase()}] ${data.payload.title}`,
+            "severity": data.priority === 'critical' ? 'critical' : 'warning',
             "source": "Alumni App Notification Microservice",
-            "target_users": data.recipients || "None specified"
+            "custom_details": {
+              "body": data.payload.body,
+              "target_users": data.recipients || "None specified"
+            }
           }
         };
 
-        const response = await fetch('https://events.pagerduty.com/generic/2010-04-15/create_event.json', {
+        const response = await fetch('https://events.pagerduty.com/v2/enqueue', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(incidentPayload)
